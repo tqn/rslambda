@@ -6,56 +6,61 @@ use std::{
 };
 
 #[derive(Debug, Clone)]
-pub enum Exp<T> {
+pub enum Exp<T>
+where
+    T: Clone + Eq + Hash,
+{
     // variable
-    Var(T),
+    Var(Ident<T>),
     // abstraction
-    Abs(T, Box<Exp<T>>),
+    Abs(Ident<T>, Box<Exp<T>>),
     // application
     App(Box<Exp<T>>, Box<Exp<T>>),
 }
 
-impl Exp<String> {
+impl<T> Exp<T>
+where
+    T: Clone + Eq + Hash,
+{
     pub fn make_identifiers_unique(
         &mut self,
-        symbols: &mut HashMap<String, usize>, // just use numbered ids for now
-        scope: &mut HashMap<String, Vec<String>>, // pop and push ids
-    ) -> Result<(), String> {
+        symbols: &mut HashMap<T, usize>, // just use numbered ids for now
+        scope: &mut HashMap<Ident<T>, Vec<Ident<T>>>, // pop and push ids
+    ) {
         // scope maps original variable name to unique id
         match self {
-            Exp::Var(name) => {
+            Exp::Var(ident) => {
                 // try to replace with the new identifier at the top of the stack
-                if let Some(identifiers) = scope.get(name) {
+                if let Some(identifiers) = scope.get(&ident) {
                     if let Some(new_id) = identifiers.last() {
-                        *name = new_id.clone();
+                        *ident = new_id.clone();
                     }
                 }
             }
-            Exp::Abs(var, body) => {
+            Exp::Abs(ident, body) => {
                 // construct an empty vec if it is missing
-                if !scope.contains_key(var) {
-                    scope.insert(var.clone(), Default::default());
+                if !scope.contains_key(&ident) {
+                    scope.insert(ident.clone(), Default::default());
                 }
                 // scope in
-                let id = get_unique_identifier(&var, symbols);
-                scope.get_mut(var).unwrap().push(id.clone());
+                let id = ident.alloc(symbols);
+                scope.get_mut(&ident).unwrap().push(id.clone());
                 // convert the body
-                body.make_identifiers_unique(symbols, scope)?;
+                body.make_identifiers_unique(symbols, scope);
                 // remove our identifier, it can never be referenced again
-                let idents = scope.get_mut(var).unwrap();
+                let idents = scope.get_mut(&ident).unwrap();
                 idents.pop();
                 // shrink the vec if it's too big (premature optimization?)
                 if idents.len() <= idents.capacity() / 2 {
                     idents.shrink_to_fit();
                 }
-                *var = id;
+                *ident = id;
             }
             Exp::App(l, r) => {
-                l.make_identifiers_unique(symbols, scope)?;
-                r.make_identifiers_unique(symbols, scope)?;
+                l.make_identifiers_unique(symbols, scope);
+                r.make_identifiers_unique(symbols, scope);
             }
         };
-        Ok(())
     }
 
     // returns a boolean indicating whether any changes were made
@@ -112,7 +117,7 @@ impl Exp<String> {
         }
     }
 
-    pub fn substitute(&mut self, symbol: &str, exp: &Exp<String>) {
+    pub fn substitute(&mut self, symbol: &Ident<T>, exp: &Exp<T>) {
         // TODO make unique vars for every bound variable in the
         match self {
             Exp::App(l, r) => {
@@ -124,7 +129,7 @@ impl Exp<String> {
                 body.substitute(symbol, exp);
             }
             Exp::Var(id) => {
-                if *id == symbol {
+                if *id == *symbol {
                     *self = exp.clone();
                 }
             }
@@ -134,7 +139,7 @@ impl Exp<String> {
 
 impl<T> Display for Exp<T>
 where
-    T: Display,
+    T: Display + Clone + Eq + Hash,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -152,7 +157,7 @@ where
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Ident<T>
 where
     T: Clone + Eq + Hash,
@@ -165,6 +170,7 @@ impl<T> Ident<T>
 where
     T: Clone + Eq + Hash,
 {
+    #[allow(dead_code)]
     pub fn new(tag: T, symbols: &mut HashMap<T, usize>) -> Self {
         let mut s = Self::without_id(tag);
         s.realloc(symbols);
@@ -179,7 +185,15 @@ where
         if !symbols.contains_key(&self.tag) {
             symbols.insert(self.tag.clone(), Default::default());
         }
-        self.id = Some(*symbols.get_mut(&self.tag).unwrap());
+        let id = symbols.get_mut(&self.tag).unwrap();
+        self.id = Some(*id);
+        *id = id.wrapping_add(1);
+    }
+
+    pub fn alloc(&self, symbols: &mut HashMap<T, usize>) -> Self {
+        let mut s = self.clone();
+        s.realloc(symbols);
+        s
     }
 }
 
@@ -193,14 +207,4 @@ where
             None => write!(f, "{}", self.tag),
         }
     }
-}
-
-fn get_unique_identifier(tag: &str, symbols: &mut HashMap<String, usize>) -> String {
-    if !symbols.contains_key(tag) {
-        symbols.insert(tag.to_string(), Default::default());
-    }
-    let n = symbols.get_mut(tag).unwrap();
-    let identifier = format!("{}_{}", tag, n);
-    *n += 1;
-    identifier
 }

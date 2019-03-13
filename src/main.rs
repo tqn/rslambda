@@ -1,9 +1,13 @@
 mod lambda;
-use lambda::Exp;
+use lambda::*;
 
 fn main() {
-    // let input = r"\f.(\x.f(x x))(\x.f(x x))";
-    let input = r"(\x.\y.f x y)";
+    // test Y combinator
+    //let input = r"\f.(\x.f (x x)) (\x.f (x x))";
+    // test successor of 2
+    let input = r"(\n.\f.\x.f (n f x)) (\f.\x.f (f x))";
+    // test eta
+    // let input = r"(\x.\y.f x y)";
 
     // TEMP: one char tokens, ignore whitespace
     let mut tokens = lex(input);
@@ -12,12 +16,20 @@ fn main() {
     let tokens = tokens.iter().map(String::as_str).collect::<Vec<_>>();
     let mut program = parse(&tokens).unwrap();
 
-    program.beta_reduce();
-    program.eta_reduce();
+    // iterate a max of 16 times so recursive things don't crash the program
+    for _ in 0..16 {
+        let did_beta = program.beta_reduce();
+        program.make_identifiers_unique(&mut Default::default(), &mut Default::default());
+        let did_eta = program.eta_reduce();
+        if !did_beta && !did_eta {
+            break;
+        }
+    }
 
     println!("{}", program);
 }
 
+// TODO: maybe use multi-char tokens
 fn lex(input: &str) -> Vec<String> {
     // one character tokens initially
     input
@@ -27,6 +39,7 @@ fn lex(input: &str) -> Vec<String> {
         .collect::<Vec<_>>()
 }
 
+// TODO: abstraction multi-var shorthand, maybe verify syntax
 fn preprocess(tokens: &mut Vec<String>) {
     // insert parens around every lambda expression
     // where we search from
@@ -45,9 +58,10 @@ fn preprocess(tokens: &mut Vec<String>) {
     }
 }
 
+// TODO: alias expressions with assignments to names
 fn parse(tokens: &[&str]) -> Result<Exp<String>, String> {
     let mut ast = generate_ast(tokens)?;
-    ast.make_identifiers_unique(&mut Default::default(), &mut Default::default())?;
+    ast.make_identifiers_unique(&mut Default::default(), &mut Default::default());
     Ok(ast)
 }
 
@@ -56,7 +70,7 @@ fn generate_ast(tokens: &[&str]) -> Result<Exp<String>, String> {
     match tokens.len() {
         0 => Err(String::from("Can't parse zero-length list of tokens")),
         // create variable expression
-        1 => Ok(Exp::Var(String::from(tokens[0]))),
+        1 => Ok(Exp::Var(Ident::without_id(String::from(tokens[0])))),
         _ => {
             if tokens.len() > 2
                 && tokens[0] == "("
@@ -68,7 +82,7 @@ fn generate_ast(tokens: &[&str]) -> Result<Exp<String>, String> {
             } else if tokens.len() > 3 && tokens[0] == r"\" && tokens[2] == "." {
                 // identified abstraction
                 Ok(Exp::Abs(
-                    String::from(tokens[1]),
+                    Ident::without_id(String::from(tokens[1])),
                     Box::new(generate_ast(&tokens[3..])?),
                 ))
             } else if tokens[tokens.len() - 1] == ")"
