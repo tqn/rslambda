@@ -5,9 +5,17 @@ fn main() {
     // test Y combinator
     //let input = r"\f.(\x.f (x x)) (\x.f (x x))";
     // test successor of 2
-    let input = r"(\n.\f.\x.f (n f x)) (\f.\x.f (f x))";
+    // let input = r"(\n.\m.\f. m (n f)) (\f.\x.f (f x))  (\f.\x.f (f (f x)))";
     // test eta
     // let input = r"(\x.\y.f x y)";
+    // factorial
+    let input = &format!(
+        r"({Y} \y.\n. {IS_ZERO} n (\f.\x.f x) ({MULT} n (y ({PRED} n)))) (\f.\x.f (f (f (f x))))",
+        Y = r"(\f.(\x.f(x x)) (\x.f(x x)))",
+        IS_ZERO = r"(\n.n (\x.(\a.\b.b)) (\a.\b.a))",
+        MULT = r"(\m.\n.\f. m (n f))",
+        PRED = r"(\n.\f.\x.n (\g.\h.h (gf)) (\u.x) (\u.u))"
+    );
 
     // TEMP: one char tokens, ignore whitespace
     let mut tokens = lex(input);
@@ -16,11 +24,22 @@ fn main() {
     let tokens = tokens.iter().map(String::as_str).collect::<Vec<_>>();
     let mut program = parse(&tokens).unwrap();
 
-    // iterate a max of 16 times so recursive things don't crash the program
-    for _ in 0..16 {
+    // iterate until irreducible
+    use std::time::Instant;
+    let now = Instant::now();
+    for i in 1.. {
         let did_beta = program.beta_reduce();
         program.make_identifiers_unique(&mut Default::default(), &mut Default::default());
         let did_eta = program.eta_reduce();
+
+        let elapsed = now.elapsed();
+        println!(
+            "iter {:4}\telapsed {:6}.{:<03} s",
+            i,
+            elapsed.as_secs(),
+            elapsed.subsec_millis()
+        );
+
         if !did_beta && !did_eta {
             break;
         }
