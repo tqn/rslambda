@@ -1,9 +1,6 @@
 use std::collections::HashMap;
+use std::fmt::{self, Display};
 use std::hash::Hash;
-use std::{
-    fmt::{self, Display},
-    mem,
-};
 
 #[derive(Debug, Clone)]
 pub enum Exp<T>
@@ -25,7 +22,7 @@ where
     pub fn make_identifiers_unique(
         &mut self,
         symbols: &mut HashMap<T, usize>, // just use numbered ids for now
-        scope: &mut HashMap<Ident<T>, Vec<Ident<T>>>, // pop and push ids
+        scope: &mut HashMap<Ident<T>, Vec<usize>>, // pop and push ids
     ) {
         // scope maps original variable name to unique id
         match self {
@@ -33,7 +30,7 @@ where
                 // try to replace with the new identifier at the top of the stack
                 if let Some(identifiers) = scope.get(&ident) {
                     if let Some(new_id) = identifiers.last() {
-                        *ident = new_id.clone();
+                        ident.id = Some(*new_id);
                     }
                 }
             }
@@ -43,8 +40,8 @@ where
                     scope.insert(ident.clone(), Default::default());
                 }
                 // scope in
-                let id = ident.alloc(symbols);
-                scope.get_mut(&ident).unwrap().push(id.clone());
+                let new_ident = ident.alloc(symbols);
+                scope.get_mut(&ident).unwrap().push(new_ident.id.unwrap());
                 // convert the body
                 body.make_identifiers_unique(symbols, scope);
                 // remove our identifier, it can never be referenced again
@@ -54,7 +51,7 @@ where
                 if idents.len() <= idents.capacity() / 2 {
                     idents.shrink_to_fit();
                 }
-                *ident = id;
+                *ident = new_ident;
             }
             Exp::App(l, r) => {
                 l.make_identifiers_unique(symbols, scope);
@@ -75,7 +72,7 @@ where
                     // bottom-up beta reduce
                     reduced.beta_reduce();
                     reduced.substitute(var, arg);
-                    mem::replace(self, reduced);
+                    *self = reduced;
                     true
                 } else {
                     // otherwise reduce both sides
@@ -106,7 +103,7 @@ where
                         if *var == *v {
                             let mut reduced = l.as_ref().clone();
                             reduced.eta_reduce();
-                            mem::replace(self, reduced);
+                            *self = reduced;
                             return true;
                         }
                     }
