@@ -30,7 +30,7 @@ where
                 // try to replace with the new identifier at the top of the stack
                 if let Some(identifiers) = scope.get(&ident) {
                     if let Some(new_id) = identifiers.last() {
-                        ident.id = Some(*new_id);
+                        ident.1 = Some(*new_id);
                     }
                 }
             }
@@ -41,7 +41,7 @@ where
                 }
                 // scope in
                 let new_ident = ident.alloc(symbols);
-                scope.get_mut(&ident).unwrap().push(new_ident.id.unwrap());
+                scope.get_mut(&ident).unwrap().push(new_ident.1.unwrap());
                 // convert the body
                 body.make_identifiers_unique(symbols, scope);
                 // remove our identifier, it can never be referenced again
@@ -155,13 +155,7 @@ where
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Ident<T>
-where
-    T: Clone + Eq + Hash,
-{
-    tag: T,
-    id: Option<usize>,
-}
+pub struct Ident<T: Clone + Eq + Hash>(T, Option<usize>);
 
 impl<T> Ident<T>
 where
@@ -175,15 +169,15 @@ where
     }
 
     pub fn without_id(tag: T) -> Self {
-        Self { tag, id: None }
+        Self(tag, None)
     }
 
     pub fn realloc(&mut self, symbols: &mut HashMap<T, usize>) {
-        if !symbols.contains_key(&self.tag) {
-            symbols.insert(self.tag.clone(), Default::default());
+        if !symbols.contains_key(&self.0) {
+            symbols.insert(self.0.clone(), Default::default());
         }
-        let id = symbols.get_mut(&self.tag).unwrap();
-        self.id = Some(*id);
+        let id = symbols.get_mut(&self.0).unwrap();
+        self.1 = Some(*id);
         *id = id.wrapping_add(1);
     }
 
@@ -199,9 +193,9 @@ where
     T: Clone + Eq + Hash + Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.id {
-            Some(id) => write!(f, "{}{}", self.tag, id),
-            None => write!(f, "{}", self.tag),
+        match self.1 {
+            Some(id) => write!(f, "{}{}", self.0, id),
+            None => write!(f, "{}", self.0),
         }
     }
 }
