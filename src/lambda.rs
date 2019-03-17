@@ -60,6 +60,19 @@ where
         };
     }
 
+    pub fn reduce(&mut self) {
+        // could loop forever, like a running program
+        loop {
+            let did_beta = self.beta_reduce();
+            self.make_identifiers_unique(&mut Default::default(), &mut Default::default());
+            let did_eta = self.eta_reduce();
+
+            if !did_beta && !did_eta {
+                break;
+            }
+        }
+    }
+
     // returns a boolean indicating whether any changes were made
     pub fn beta_reduce(&mut self) -> bool {
         // beta reduce from bottom up one time to avoid infinite regress

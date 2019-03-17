@@ -24,28 +24,21 @@ fn main() {
     let tokens = tokens.iter().map(String::as_str).collect::<Vec<_>>();
     let mut program = parse(&tokens).unwrap();
 
+    println!("{}", program);
+
     // iterate until irreducible
     use std::time::Instant;
     let now = Instant::now();
-    for i in 1.. {
-        let did_beta = program.beta_reduce();
-        program.make_identifiers_unique(&mut Default::default(), &mut Default::default());
-        let did_eta = program.eta_reduce();
 
-        let elapsed = now.elapsed();
-        println!(
-            "iter {:4}\telapsed {:6}.{:<03} s",
-            i,
-            elapsed.as_secs(),
-            elapsed.subsec_millis()
-        );
+    program.reduce();
 
-        if !did_beta && !did_eta {
-            break;
-        }
-    }
-
-    println!("{}", program);
+    let elapsed = now.elapsed();
+    println!(
+        "elapsed {:6}.{:<03} s\n{}",
+        elapsed.as_secs(),
+        elapsed.subsec_millis(),
+        program
+    );
 }
 
 // TODO: maybe use multi-char tokens
