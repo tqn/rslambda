@@ -73,6 +73,41 @@ where
         }
     }
 
+    pub fn as_numeral(&self) -> Option<usize> {
+        // try to coerce this expression into a Church numeral
+        // assume the expression has been completely reduced.
+        // we are looking for an expression of the pattern
+        // \f.\x.f^n x
+        // eventually, `box` destructuring can be used to avoid the nested ifs
+        if let Exp::Abs(f, fbody) = self {
+            if let Exp::Abs(x, body) = fbody.as_ref() {
+                // manually make mut since rust patterns won't let me
+                // make a mut variable that is a ref
+                let mut body = body;
+                let mut depth = 0;
+                while let Exp::App(l, r) = body.as_ref() {
+                    if let Exp::Var(ident) = l.as_ref() {
+                        if ident == f {
+                            // left side var matches f
+                            depth += 1;
+                            // now inspect the right side
+                            body = r;
+                            continue;
+                        }
+                    }
+                    return None;
+                }
+                // body should now be x
+                if let Exp::Var(ident) = body.as_ref() {
+                    if ident == x {
+                        return Some(depth);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     // returns a boolean indicating whether any changes were made
     pub fn beta_reduce(&mut self) -> bool {
         // beta reduce from bottom up one time to avoid infinite regress

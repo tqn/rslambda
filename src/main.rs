@@ -39,6 +39,11 @@ fn main() {
         elapsed.subsec_millis(),
         program
     );
+
+    // attempt to display the church numeral value
+    if let Some(n) = program.as_numeral() {
+        println!(" = {}", n);
+    }
 }
 
 // TODO: maybe use multi-char tokens
