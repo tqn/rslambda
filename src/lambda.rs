@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::hash::Hash;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Exp<T>
 where
     T: Clone + Eq + Hash,
@@ -203,7 +203,7 @@ where
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Ident<T: Clone + Eq + Hash>(T, Option<usize>);
+pub struct Ident<T: Clone + Eq + Hash>(pub T, pub Option<usize>);
 
 impl<T> Ident<T>
 where

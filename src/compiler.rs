@@ -6,11 +6,15 @@ pub fn compile(input: &str) -> Result<Exp<String>, String> {
     preprocess(&mut tokens);
     // make tokens immutable
     let tokens = tokens.iter().map(String::as_str).collect::<Vec<_>>();
-    parse(&tokens)
+    let program = parse(&tokens);
+    program.map(|mut e| {
+        e.make_identifiers_unique(&mut Default::default(), &mut Default::default());
+        e
+    })
 }
 
 // TODO: maybe use multi-char tokens
-pub fn lex(input: &str) -> Vec<String> {
+fn lex(input: &str) -> Vec<String> {
     // one character tokens initially
     input
         .chars()
@@ -20,7 +24,7 @@ pub fn lex(input: &str) -> Vec<String> {
 }
 
 // TODO: abstraction multi-var shorthand, maybe verify syntax
-pub fn preprocess(tokens: &mut Vec<String>) {
+fn preprocess(tokens: &mut Vec<String>) {
     // insert parens around every lambda expression
     // where we search from
     let mut begin = 0;
@@ -29,28 +33,28 @@ pub fn preprocess(tokens: &mut Vec<String>) {
         // skip the "(\"
         begin = i + 2;
         // insert an opening brace
-        tokens.insert(i, String::from("("));
+        tokens.insert(i, "(".into());
         tokens.insert(
             find_matching_brace(tokens[i..].iter().map(String::as_str), ("(", ")"))
                 .map_or_else(|| tokens.len(), |v| v + i),
-            String::from(")"),
+            ")".into(),
         );
     }
 }
 
 // TODO: alias expressions with assignments to names
-pub fn parse(tokens: &[&str]) -> Result<Exp<String>, String> {
+fn parse(tokens: &[&str]) -> Result<Exp<String>, String> {
     let mut ast = generate_ast(tokens)?;
     ast.make_identifiers_unique(&mut Default::default(), &mut Default::default());
     Ok(ast)
 }
 
-pub fn generate_ast(tokens: &[&str]) -> Result<Exp<String>, String> {
+fn generate_ast(tokens: &[&str]) -> Result<Exp<String>, String> {
     // TODO: in the future, use bnf crate
     match tokens.len() {
-        0 => Err(String::from("Can't parse zero-length list of tokens")),
+        0 => Err("Can't parse zero-length list of tokens".into()),
         // create variable expression
-        1 => Ok(Exp::Var(Ident::without_id(String::from(tokens[0])))),
+        1 => Ok(Exp::Var(Ident::without_id(tokens[0].into()))),
         _ => {
             if tokens.len() > 2
                 && tokens[0] == "("
@@ -62,7 +66,7 @@ pub fn generate_ast(tokens: &[&str]) -> Result<Exp<String>, String> {
             } else if tokens.len() > 3 && tokens[0] == r"\" && tokens[2] == "." {
                 // identified abstraction
                 Ok(Exp::Abs(
-                    Ident::without_id(String::from(tokens[1])),
+                    Ident::without_id(tokens[1].into()),
                     Box::new(generate_ast(&tokens[3..])?),
                 ))
             } else if tokens[tokens.len() - 1] == ")"
@@ -90,7 +94,7 @@ pub fn generate_ast(tokens: &[&str]) -> Result<Exp<String>, String> {
 /// If it isn't `(`, `Some(0)` is returned.
 /// If the end of the vector is reached without finding a closing brace,
 /// `None` is returned.
-pub fn find_matching_brace<'a>(
+fn find_matching_brace<'a>(
     v: impl Iterator<Item = &'a str>,
     symbols: (&str, &str),
 ) -> Option<usize> {
@@ -106,4 +110,116 @@ pub fn find_matching_brace<'a>(
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lambda::Exp::*;
+
+    #[test]
+    fn variable() {
+        assert_eq!(compile(r"x").unwrap(), Var(Ident("x".into(), None)));
+    }
+
+    #[test]
+    fn abstraction_implicit() {
+        assert_eq!(
+            compile(r"\x.y").unwrap(),
+            Abs(
+                Ident("x".into(), Some(0)),
+                Box::new(Var(Ident("y".into(), None)))
+            )
+        );
+    }
+
+    #[test]
+    fn abstraction_explicit() {
+        assert_eq!(
+            compile(r"(\x.y)").unwrap(),
+            Abs(
+                Ident("x".into(), Some(0)),
+                Box::new(Var(Ident("y".into(), None)))
+            )
+        );
+    }
+
+    #[test]
+    fn application_implicit() {
+        assert_eq!(
+            compile(r"x y").unwrap(),
+            App(
+                Box::new(Var(Ident("x".into(), None))),
+                Box::new(Var(Ident("y".into(), None)))
+            )
+        );
+    }
+
+    #[test]
+    fn application_multiple() {
+        assert_eq!(
+            compile(r"x y z").unwrap(),
+            App(
+                Box::new(App(
+                    Box::new(Var(Ident("x".into(), None))),
+                    Box::new(Var(Ident("y".into(), None)))
+                )),
+                Box::new(Var(Ident("z".into(), None)))
+            )
+        );
+    }
+
+    #[test]
+    fn application_explicit() {
+        assert_eq!(
+            compile(r"(x y)").unwrap(),
+            App(
+                Box::new(Var(Ident("x".into(), None))),
+                Box::new(Var(Ident("y".into(), None)))
+            )
+        );
+    }
+
+    #[test]
+    fn many() {
+        assert_eq!(
+            compile(r"(\x. y z) a b").unwrap(),
+            App(
+                Box::new(App(
+                    Box::new(Abs(
+                        Ident("x".into(), Some(0)),
+                        Box::new(App(
+                            Box::new(Var(Ident("y".into(), None))),
+                            Box::new(Var(Ident("z".into(), None)))
+                        ))
+                    )),
+                    Box::new(Var(Ident("a".into(), None)))
+                )),
+                Box::new(Var(Ident("b".into(), None)))
+            )
+        );
+    }
+
+    #[test]
+    fn scoping() {
+        assert_eq!(
+            compile(r"x \x. x (\x. x) x").unwrap(),
+            App(
+                Box::new(Var(Ident("x".into(), None))),
+                Box::new(Abs(
+                    Ident("x".into(), Some(0)),
+                    Box::new(App(
+                        Box::new(App(
+                            Box::new(Var(Ident("x".into(), Some(0)))),
+                            Box::new(Abs(
+                                Ident("x".into(), Some(1)),
+                                Box::new(Var(Ident("x".into(), Some(1))))
+                            ))
+                        )),
+                        Box::new(Var(Ident("x".into(), Some(0))))
+                    ))
+                ))
+            )
+        );
+    }
 }
