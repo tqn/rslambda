@@ -1,3 +1,4 @@
+#![feature(box_patterns)]
 mod compiler;
 mod lambda;
 

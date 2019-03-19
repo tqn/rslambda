@@ -15,6 +15,8 @@ where
     App(Box<Exp<T>>, Box<Exp<T>>),
 }
 
+use Exp::*;
+
 impl<T> Exp<T>
 where
     T: Clone + Eq + Hash,
@@ -26,7 +28,7 @@ where
     ) {
         // scope maps original variable name to unique id
         match self {
-            Exp::Var(ident) => {
+            Var(ident) => {
                 // try to replace with the new identifier at the top of the stack
                 if let Some(identifiers) = scope.get(&ident) {
                     if let Some(new_id) = identifiers.last() {
@@ -34,7 +36,7 @@ where
                     }
                 }
             }
-            Exp::Abs(ident, body) => {
+            Abs(ident, body) => {
                 // construct an empty vec if it is missing
                 if !scope.contains_key(&ident) {
                     scope.insert(ident.clone(), Default::default());
@@ -53,7 +55,7 @@ where
                 }
                 *ident = new_ident;
             }
-            Exp::App(l, r) => {
+            App(l, r) => {
                 l.make_identifiers_unique(symbols, scope);
                 r.make_identifiers_unique(symbols, scope);
             }
@@ -79,29 +81,25 @@ where
         // we are looking for an expression of the pattern
         // \f.\x.f^n x
         // eventually, `box` destructuring can be used to avoid the nested ifs
-        if let Exp::Abs(f, fbody) = self {
-            if let Exp::Abs(x, body) = fbody.as_ref() {
-                // manually make mut since rust patterns won't let me
-                // make a mut variable that is a ref
-                let mut body = body;
-                let mut depth = 0;
-                while let Exp::App(l, r) = body.as_ref() {
-                    if let Exp::Var(ident) = l.as_ref() {
-                        if ident == f {
-                            // left side var matches f
-                            depth += 1;
-                            // now inspect the right side
-                            body = r;
-                            continue;
-                        }
-                    }
+        if let Abs(f, box Abs(x, body)) = self {
+            // manually make mut since rust patterns won't let me
+            // make a mut variable that is a ref
+            let mut body = body;
+            let mut depth = 0;
+            while let box App(box Var(ident), r) = body {
+                if ident != f {
                     return None;
                 }
-                // body should now be x
-                if let Exp::Var(ident) = body.as_ref() {
-                    if ident == x {
-                        return Some(depth);
-                    }
+                // left side var matches f
+                depth += 1;
+                // now inspect the right side
+                body = r;
+                continue;
+            }
+            // body should now be x
+            if let box Var(ident) = body {
+                if ident == x {
+                    return Some(depth);
                 }
             }
         }
@@ -113,9 +111,9 @@ where
         // beta reduce from bottom up one time to avoid infinite regress
         match self {
             // where everything interesting happens
-            Exp::App(func, arg) => {
+            App(func, arg) => {
                 // if the application has an abstraction on the left
-                if let Exp::Abs(var, body) = func.as_ref() {
+                if let box Abs(var, body) = func {
                     let mut reduced = body.as_ref().clone();
                     // bottom-up beta reduce
                     reduced.beta_reduce();
@@ -129,7 +127,7 @@ where
                     arg.beta_reduce() || changed
                 }
             }
-            Exp::Abs(_, body) => {
+            Abs(_, body) => {
                 // recurse
                 body.beta_reduce()
             }
@@ -140,20 +138,18 @@ where
 
     pub fn eta_reduce(&mut self) -> bool {
         match self {
-            Exp::App(func, arg) => {
+            App(func, arg) => {
                 let changed = func.eta_reduce();
                 arg.eta_reduce() || changed
             }
-            Exp::Abs(var, body) => {
+            Abs(var, body) => {
                 let changed = body.eta_reduce();
-                if let Exp::App(l, r) = body.as_ref() {
-                    if let Exp::Var(v) = r.as_ref() {
-                        if *var == *v {
-                            let mut reduced = l.as_ref().clone();
-                            reduced.eta_reduce();
-                            *self = reduced;
-                            return true;
-                        }
+                if let box App(l, box Var(v)) = body {
+                    if *var == *v {
+                        let mut reduced = l.as_ref().clone();
+                        reduced.eta_reduce();
+                        *self = reduced;
+                        return true;
                     }
                 }
                 changed
@@ -165,15 +161,15 @@ where
     pub fn substitute(&mut self, symbol: &Ident<T>, exp: &Exp<T>) {
         // TODO make unique vars for every bound variable in the
         match self {
-            Exp::App(l, r) => {
+            App(l, r) => {
                 l.substitute(symbol, exp);
                 r.substitute(symbol, exp);
             }
-            Exp::Abs(_, body) => {
+            Abs(_, body) => {
                 // should be made unique already, so binding is ignored
                 body.substitute(symbol, exp);
             }
-            Exp::Var(id) => {
+            Var(id) => {
                 if *id == *symbol {
                     *self = exp.clone();
                 }
@@ -188,16 +184,16 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Exp::Var(v) => write!(f, "{}", v),
-            Exp::Abs(v, b) => {
-                if let Exp::App(l, r) = b.as_ref() {
+            Var(v) => write!(f, "{}", v),
+            Abs(v, b) => {
+                if let box App(l, r) = b {
                     // don't wrap the application in parentheses
                     write!(f, r"(\{}.{} {})", v, l, r)
                 } else {
                     write!(f, r"(\{}.{})", v, b)
                 }
             }
-            Exp::App(l, r) => write!(f, "({} {})", l, r),
+            App(l, r) => write!(f, "({} {})", l, r),
         }
     }
 }
