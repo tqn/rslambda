@@ -64,14 +64,20 @@ where
 
     pub fn reduce(&mut self) {
         // could loop forever, like a running program
+        let mut symbols = Default::default();
+        let mut scope = Default::default();
         loop {
             let did_beta = self.beta_reduce();
-            self.make_identifiers_unique(&mut Default::default(), &mut Default::default());
+            self.make_identifiers_unique(&mut symbols, &mut scope);
             let did_eta = self.eta_reduce();
 
             if !did_beta && !did_eta {
                 break;
             }
+
+            // clear the maps for memory reuse
+            symbols.clear();
+            scope.clear();
         }
     }
 
