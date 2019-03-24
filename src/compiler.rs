@@ -54,7 +54,7 @@ fn generate_ast(tokens: &[&str]) -> Result<Exp<String>, String> {
     match tokens.len() {
         0 => Err("Can't parse zero-length list of tokens".into()),
         // create variable expression
-        1 => Ok(Exp::Var(Ident::without_id(tokens[0].into()))),
+        1 => Ok(Exp::Var(Ident::free(tokens[0].into()))),
         _ => {
             if tokens.len() > 2
                 && tokens[0] == "("
@@ -66,7 +66,7 @@ fn generate_ast(tokens: &[&str]) -> Result<Exp<String>, String> {
             } else if tokens.len() > 3 && tokens[0] == r"\" && tokens[2] == "." {
                 // identified abstraction
                 Ok(Exp::Abs(
-                    Ident::without_id(tokens[1].into()),
+                    Ident::free(tokens[1].into()),
                     Box::new(generate_ast(&tokens[3..])?),
                 ))
             } else if tokens[tokens.len() - 1] == ")"
@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn variable() {
-        assert_eq!(compile(r"x").unwrap(), Var(Ident("x".into(), None)));
+        assert_eq!(compile(r"x").unwrap(), Var(Ident::free("x".into())));
     }
 
     #[test]
@@ -128,7 +128,7 @@ mod tests {
             compile(r"\x.y").unwrap(),
             Abs(
                 Ident("x".into(), Some(0)),
-                Box::new(Var(Ident("y".into(), None)))
+                Box::new(Var(Ident::free("y".into())))
             )
         );
     }
@@ -139,7 +139,7 @@ mod tests {
             compile(r"(\x.y)").unwrap(),
             Abs(
                 Ident("x".into(), Some(0)),
-                Box::new(Var(Ident("y".into(), None)))
+                Box::new(Var(Ident::free("y".into())))
             )
         );
     }
@@ -149,8 +149,8 @@ mod tests {
         assert_eq!(
             compile(r"x y").unwrap(),
             App(
-                Box::new(Var(Ident("x".into(), None))),
-                Box::new(Var(Ident("y".into(), None)))
+                Box::new(Var(Ident::free("x".into()))),
+                Box::new(Var(Ident::free("y".into())))
             )
         );
     }
@@ -161,10 +161,10 @@ mod tests {
             compile(r"x y z").unwrap(),
             App(
                 Box::new(App(
-                    Box::new(Var(Ident("x".into(), None))),
-                    Box::new(Var(Ident("y".into(), None)))
+                    Box::new(Var(Ident::free("x".into()))),
+                    Box::new(Var(Ident::free("y".into())))
                 )),
-                Box::new(Var(Ident("z".into(), None)))
+                Box::new(Var(Ident::free("z".into())))
             )
         );
     }
@@ -174,8 +174,8 @@ mod tests {
         assert_eq!(
             compile(r"(x y)").unwrap(),
             App(
-                Box::new(Var(Ident("x".into(), None))),
-                Box::new(Var(Ident("y".into(), None)))
+                Box::new(Var(Ident::free("x".into()))),
+                Box::new(Var(Ident::free("y".into())))
             )
         );
     }
@@ -189,13 +189,13 @@ mod tests {
                     Box::new(Abs(
                         Ident("x".into(), Some(0)),
                         Box::new(App(
-                            Box::new(Var(Ident("y".into(), None))),
-                            Box::new(Var(Ident("z".into(), None)))
+                            Box::new(Var(Ident::free("y".into()))),
+                            Box::new(Var(Ident::free("z".into())))
                         ))
                     )),
-                    Box::new(Var(Ident("a".into(), None)))
+                    Box::new(Var(Ident::free("a".into())))
                 )),
-                Box::new(Var(Ident("b".into(), None)))
+                Box::new(Var(Ident::free("b".into())))
             )
         );
     }
@@ -205,7 +205,7 @@ mod tests {
         assert_eq!(
             compile(r"x \x. x (\x. x) x").unwrap(),
             App(
-                Box::new(Var(Ident("x".into(), None))),
+                Box::new(Var(Ident::free("x".into()))),
                 Box::new(Abs(
                     Ident("x".into(), Some(0)),
                     Box::new(App(

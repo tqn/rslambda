@@ -213,12 +213,12 @@ where
 {
     #[allow(dead_code)]
     pub fn new(tag: T, symbols: &mut HashMap<T, usize>) -> Self {
-        let mut s = Self::without_id(tag);
+        let mut s = Self::free(tag);
         s.realloc(symbols);
         s
     }
 
-    pub fn without_id(tag: T) -> Self {
+    pub fn free(tag: T) -> Self {
         Self(tag, None)
     }
 
