@@ -13,11 +13,12 @@ fn main() {
     // let input = r"(\x.\y.f x y)";
     // factorial
     let input = format!(
-        r"({Y} \y.\n. {IS_ZERO} n (\f.\x.f x) ({MULT} n (y ({PRED} n)))) (\f.\x.f (f (f (f x))))",
+        r"({Y} \y.\n. {IS_ZERO} n (\f.\x.f x) ({MULT} n (y ({PRED} n)))) {N}",
         Y = r"(\f.(\x.f(x x)) (\x.f(x x)))",
         IS_ZERO = r"(\n.n (\x.(\a.\b.b)) (\a.\b.a))",
         MULT = r"(\m.\n.\f. m (n f))",
-        PRED = r"(\n.\f.\x.n (\g.\h.h (gf)) (\u.x) (\u.u))"
+        PRED = r"(\n.\f.\x.n (\g.\h.h (gf)) (\u.x) (\u.u))",
+        N = r"(\f.\x.f (f (f (f x))))"
     );
 
     let mut program = compile(&input).unwrap();

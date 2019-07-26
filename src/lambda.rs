@@ -128,9 +128,8 @@ where
                     true
                 } else {
                     // otherwise reduce both sides
-                    // use temp variable to avoid short-circuit eval
-                    let changed = func.beta_reduce();
-                    arg.beta_reduce() || changed
+                    // prevent short circuit eval
+                    func.beta_reduce() | arg.beta_reduce()
                 }
             }
             Abs(_, body) => {
@@ -144,10 +143,7 @@ where
 
     pub fn eta_reduce(&mut self) -> bool {
         match self {
-            App(func, arg) => {
-                let changed = func.eta_reduce();
-                arg.eta_reduce() || changed
-            }
+            App(func, arg) => func.eta_reduce() | arg.eta_reduce(),
             Abs(var, body) => {
                 let changed = body.eta_reduce();
                 if let box App(l, box Var(v)) = body {
@@ -164,21 +160,21 @@ where
         }
     }
 
-    pub fn substitute(&mut self, symbol: &Ident<T>, exp: &Exp<T>) {
+    // precondition: make_unique called
+    pub fn substitute(&mut self, symbol: &Ident<T>, exp: &Exp<T>) -> bool {
         // TODO make unique vars for every bound variable in the
         match self {
-            App(l, r) => {
-                l.substitute(symbol, exp);
-                r.substitute(symbol, exp);
-            }
+            App(l, r) => l.substitute(symbol, exp) | r.substitute(symbol, exp),
             Abs(_, body) => {
                 // should be made unique already, so binding is ignored
-                body.substitute(symbol, exp);
+                body.substitute(symbol, exp)
             }
             Var(id) => {
-                if *id == *symbol {
+                let matches = *id == *symbol;
+                if matches {
                     *self = exp.clone();
                 }
+                matches
             }
         }
     }
@@ -247,5 +243,205 @@ where
             Some(id) => write!(f, "{}{}", self.0, id),
             None => write!(f, "{}", self.0),
         }
+    }
+}
+
+// tests are super incomplete, coverage not examined
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compiler::*;
+
+    #[test]
+    fn substitute() {
+        // test substituting l/r of App, r but not l of Abs, and Var
+        let mut symbols = Default::default();
+        let mut scope = Default::default();
+
+        let mut exp = compile(r"\a.a (x ((\b. x) x))").unwrap();
+        exp.make_identifiers_unique(&mut symbols, &mut scope);
+        symbols.clear();
+        scope.clear();
+
+        // substituting non existent symbol should be false
+        {
+            let mut exp2 = exp.clone();
+            assert!(!exp2.substitute(
+                &Ident::free("z".into()),
+                &Exp::Var(Ident("y".into(), Some(0))),
+            ));
+            assert_eq!(exp2, exp);
+        }
+
+        assert!(exp.substitute(
+            &Ident::free("x".into()),
+            &Exp::Var(Ident("y".into(), Some(0))),
+        ));
+
+        assert_eq!(
+            exp,
+            Abs(
+                Ident("a".into(), Some(0)),
+                Box::new(App(
+                    Box::new(Var(Ident("a".into(), Some(0)))),
+                    Box::new(App(
+                        Box::new(Var(Ident("y".into(), Some(0)))),
+                        Box::new(App(
+                            Box::new(Abs(
+                                Ident("b".into(), Some(0)),
+                                Box::new(Var(Ident("y".into(), Some(0))))
+                            )),
+                            Box::new(Var(Ident("y".into(), Some(0))))
+                        ))
+                    ))
+                ))
+            )
+        );
+    }
+
+    #[test]
+    fn reduce() {
+        // run 3 factorial
+        let input = format!(
+            r"({Y} \y.\n. {IS_ZERO} n (\f.\x.f x) ({MULT} n (y ({PRED} n)))) {N}",
+            Y = r"(\f.(\x.f(x x)) (\x.f(x x)))",
+            IS_ZERO = r"(\n.n (\x.(\a.\b.b)) (\a.\b.a))",
+            MULT = r"(\m.\n.\f. m (n f))",
+            PRED = r"(\n.\f.\x.n (\g.\h.h (gf)) (\u.x) (\u.u))",
+            N = r"(\f.\x.f (f (f x)))" // 3
+        );
+
+        let mut program = compile(&input).unwrap();
+
+        program.reduce();
+
+        assert_eq!(
+            program,
+            compile(r"(\f.\x.f (f (f (f (f (f x))))))").unwrap() // 6
+        );
+    }
+
+    #[test]
+    fn as_numeral() {
+        assert_eq!(compile(r"\f.\x.f").unwrap().as_numeral(), None);
+        assert_eq!(compile(r"\f.\x.x f").unwrap().as_numeral(), None);
+        assert_eq!(compile(r"\f.\x.f (x f)").unwrap().as_numeral(), None);
+        assert_eq!(compile(r"\f.\x.f f x").unwrap().as_numeral(), None);
+
+        assert_eq!(compile(r"\f.\x.x").unwrap().as_numeral(), Some(0));
+        assert_eq!(compile(r"\f.\x.f x").unwrap().as_numeral(), Some(1));
+        assert_eq!(compile(r"\f.\x.f (f x)").unwrap().as_numeral(), Some(2));
+        assert_eq!(compile(r"\f.\x.f (f (f x))").unwrap().as_numeral(), Some(3));
+    }
+
+    #[test]
+    fn beta_reduce() {
+        let mut symbols = Default::default();
+        let mut scope = Default::default();
+
+        let mut exp = compile(r"(\x.(\a.(\u.a) b \u.x) (\u.u) x) \v.f v").unwrap();
+        assert!(exp.beta_reduce());
+        exp.make_identifiers_unique(&mut symbols, &mut scope);
+        symbols.clear();
+        scope.clear();
+
+        assert_eq!(
+            exp,
+            App(
+                Box::new(App(
+                    Box::new(Abs(
+                        Ident("u".into(), Some(0)),
+                        Box::new(Var(Ident("u".into(), Some(0))))
+                    )),
+                    Box::new(Abs(
+                        Ident("u".into(), Some(1)),
+                        Box::new(Abs(
+                            Ident("v".into(), Some(0)),
+                            Box::new(App(
+                                Box::new(Var(Ident::free("f".into()))),
+                                Box::new(Var(Ident("v".into(), Some(0))))
+                            ))
+                        ))
+                    ))
+                )),
+                Box::new(Abs(
+                    Ident("v".into(), Some(1)),
+                    Box::new(App(
+                        Box::new(Var(Ident::free("f".into()))),
+                        Box::new(Var(Ident("v".into(), Some(1))))
+                    ))
+                ))
+            )
+        );
+        assert!(exp.beta_reduce());
+        exp.make_identifiers_unique(&mut symbols, &mut scope);
+        symbols.clear();
+        scope.clear();
+
+        assert_eq!(
+            exp,
+            App(
+                Box::new(Abs(
+                    Ident("u".into(), Some(0)),
+                    Box::new(Abs(
+                        Ident("v".into(), Some(0)),
+                        Box::new(App(
+                            Box::new(Var(Ident::free("f".into()))),
+                            Box::new(Var(Ident("v".into(), Some(0))))
+                        ))
+                    ))
+                )),
+                Box::new(Abs(
+                    Ident("v".into(), Some(1)),
+                    Box::new(App(
+                        Box::new(Var(Ident::free("f".into()))),
+                        Box::new(Var(Ident("v".into(), Some(1))))
+                    ))
+                ))
+            )
+        );
+        assert!(exp.beta_reduce());
+        exp.make_identifiers_unique(&mut symbols, &mut scope);
+        symbols.clear();
+        scope.clear();
+
+        assert_eq!(
+            exp,
+            Abs(
+                Ident("v".into(), Some(0)),
+                Box::new(App(
+                    Box::new(Var(Ident::free("f".into()))),
+                    Box::new(Var(Ident("v".into(), Some(0))))
+                ))
+            )
+        );
+        assert!(!exp.beta_reduce());
+
+        assert_eq!(
+            exp,
+            Abs(
+                Ident("v".into(), Some(0)),
+                Box::new(App(
+                    Box::new(Var(Ident::free("f".into()))),
+                    Box::new(Var(Ident("v".into(), Some(0))))
+                ))
+            )
+        );
+    }
+
+    #[test]
+    fn eta_reduce() {
+        let mut exp = compile(r"(\x.(\y.(\u.a) y) x) \v.g v").unwrap();
+        assert!(exp.eta_reduce());
+        assert_eq!(
+            exp,
+            App(
+                Box::new(Abs(
+                    Ident("u".into(), Some(0)),
+                    Box::new(Var(Ident::free("a".into())))
+                )),
+                Box::new(Var(Ident::free("g".into())))
+            )
+        );
     }
 }

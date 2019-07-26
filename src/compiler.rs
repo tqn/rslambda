@@ -6,11 +6,7 @@ pub fn compile(input: &str) -> Result<Exp<String>, String> {
     preprocess(&mut tokens);
     // make tokens immutable
     let tokens = tokens.iter().map(String::as_str).collect::<Vec<_>>();
-    let program = parse(&tokens);
-    program.map(|mut e| {
-        e.make_identifiers_unique(&mut Default::default(), &mut Default::default());
-        e
-    })
+    parse(&tokens)
 }
 
 // TODO: maybe use multi-char tokens
